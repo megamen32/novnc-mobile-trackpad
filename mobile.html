@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#11151e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>noVNC — мобильный рабочий стол</title>
+<style>
+:root { color-scheme: dark; font: 14px system-ui,-apple-system,sans-serif; }
+* { box-sizing:border-box; }
+html,body { width:100%;height:100%;margin:0;overflow:hidden;background:#0b101a; }
+#screen { position:fixed;inset:0 0 calc(58px + env(safe-area-inset-bottom)) 0;overflow:hidden;background:#090b11; }
+#screen > div {overflow:hidden !important;}
+#touch { position:fixed;inset:0 0 calc(58px + env(safe-area-inset-bottom)) 0;z-index:3;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none; }
+#cursor { position:fixed;z-index:4;pointer-events:none;display:none;width:19px;height:25px;filter:drop-shadow(0px 1px 2px #000); }
+#cursor svg { width:100%;height:100%; }
+#bar { position:fixed;bottom:0;left:0;right:0;height:calc(58px + env(safe-area-inset-bottom));padding:5px 5px calc(5px + env(safe-area-inset-bottom));z-index:6;display:flex;gap:5px;align-items:stretch;background:#151b28;border-top:1px solid #303949; }
+#bar button { min-width:0;flex:1;border:1px solid #364456;border-radius:9px;background:#273245;color:#fff;font:500 12px system-ui,-apple-system,sans-serif;white-space:nowrap; }
+#bar button.primary { flex:1.5;background:#325dc1;border-color:#4975d8; }
+#bar button:active { background:#455b7c; }
+#status { z-index:2;position:fixed;left:50%;top:40%;transform:translate(-50%,-50%);max-width:85%;border-radius:9px;background:#121825e8;padding:12px 16px;color:#e3e8f3;text-align:center;font-size:13px;pointer-events:none; }
+#status:empty { display:none; }
+#hint { position:fixed;top:calc(8px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);max-width:90%;border-radius:20px;padding:7px 13px;background:#111b30d9;color:#e6ebfb;z-index:5;font-size:12px;pointer-events:none;text-align:center;transition:opacity .3s; }
+#hint.off { opacity:0; }
+#zoom-reset { position:fixed;right:9px;top:calc(8px + env(safe-area-inset-top));z-index:5;
+border:1px solid #566784;background:#25334c;color:white;border-radius:9px;padding:7px 10px;
+font:600 13px system-ui,-apple-system,sans-serif;touch-action:manipulation;min-width:47px; }
+#ime-panel { position:fixed;left:8px;right:8px;bottom:calc(64px + env(safe-area-inset-bottom));z-index:7;padding:8px;background:#1e2a3d;border-radius:10px;display:none;gap:8px;align-items:center; }
+#ime-panel.open {display:flex;}
+#ime {flex:1;width:0;min-width:0;border-radius:6px;border:1px solid #516784;background:#0f1723;color:white;font:16px system-ui,sans-serif;padding:11px; }
+#ime-close { background:#33445f;color:white;border:0;border-radius:6px;padding:12px; }
+@media (orientation:landscape) and (max-height:450px) {
+ #bar {height:calc(45px + env(safe-area-inset-bottom));padding:3px 5px calc(3px + env(safe-area-inset-bottom));}
+ #screen,#touch { bottom:calc(45px + env(safe-area-inset-bottom)); }
+ #ime-panel {bottom:calc(49px + env(safe-area-inset-bottom));}
+}
+</style>
+</head>
+<body>
+<div id="screen"></div>
+<div id="touch" aria-label="Тачпад"></div>
+<div id="cursor" aria-hidden="true"><svg viewBox="0 0 20 28"><path d="M1 1 L1 24 L7 18 L11.5 26 L16 23.7 L11.8 16.5 L19 16 Z" fill="#fff" stroke="#101010" stroke-width="2" stroke-linejoin="round"/></svg></div>
+<div id="status">Подключение к рабочему столу…</div>
+<div id="hint">Два пальца врозь/вместе — масштаб · курсор остаётся в центре · два пальца вместе — прокрутка</div>
+<button id="zoom-reset" type="button" title="Сброс масштаба">1×</button>
+<div id="ime-panel"><input id="ime" type="text" placeholder="Ввод в удалённый Chrome" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"><button id="ime-close" type="button">Готово</button></div>
+<div id="bar">
+<button id="mode" class="primary" type="button" aria-pressed="true">Тачпад</button>
+<button id="left" type="button">ЛКМ</button>
+<button id="right" type="button">ПКМ</button>
+<button id="keyboard" type="button">⌨ Ввод</button>
+<button id="tab" type="button">Tab</button>
+<button id="fullscreen" type="button">⛶</button>
+</div>
+<script type="module">
+import RFB from './core/rfb.js';
+
+const screen=document.getElementById('screen');
+const layer=document.getElementById('touch');
+const cursorEl=document.getElementById('cursor');
+const statusEl=document.getElementById('status');
+const hintEl=document.getElementById('hint');
+const modeBtn=document.getElementById('mode');
+const zoomReset=document.getElementById('zoom-reset');
+const ime=document.getElementById('ime');
+const imePanel=document.getElementById('ime-panel');
+let rfb=null, retry=0, trackpad=true, drag=false, longTimer=null, gestureMax=0, gestureMoved=false, wheelAccumulator=0, zoom=1, pinch=null;
+const pointers=new Map();
+const pos={x:0,y:0,ready:false,w:0,h:0};
+
+function hint(message) {
+  hintEl.textContent=message;
+  hintEl.classList.remove('off');
+  clearTimeout(hint.timer);
+  hint.timer=setTimeout(()=>hintEl.classList.add('off'),3200);
+}
+setTimeout(()=>hintEl.classList.add('off'),6000);
+function getCanvas(){return screen.querySelector('canvas');}
+// The VNC renderer stays at its original scale: only the visible HTML canvas is
+// magnified. Mouse coordinates sent to RFB remain UNZOOMED canvas coordinates.
+function updateCursor(send=false) {
+  const canvas=getCanvas();
+  if(!canvas) return;
+  const stage=rfb?rfb._screen:null;
+  if(!stage) return;
+  const baseW=canvas.offsetWidth;
+  const baseH=canvas.offsetHeight;
+  if(!baseW || !baseH) return;
+  if(!pos.ready){pos.x=baseW/2;pos.y=baseH/2;pos.ready=true;}
+  else if(pos.w && pos.h && (baseW!==pos.w || baseH!==pos.h)){
+    // Preserve the same remote pixel when the phone is rotated.
+    pos.x*=baseW/pos.w;
+    pos.y*=baseH/pos.h;
+  }
+  pos.w=baseW;pos.h=baseH;
+  pos.x=Math.max(0,Math.min(baseW-1,pos.x));
+  pos.y=Math.max(0,Math.min(baseH-1,pos.y));
+
+  // noVNC uses a flexbox, centering the untransformed canvas via auto margins.
+  const r=stage.getBoundingClientRect();
+  const baseLeft=r.left+(r.width-baseW)/2;
+  const baseTop=r.top+(r.height-baseH)/2;
+  const view=layer.getBoundingClientRect();
+  let cursorX=baseLeft+pos.x, cursorY=baseTop+pos.y;
+  if(zoom>1.001 && trackpad){
+    const centerX=view.left+view.width/2, centerY=view.top+view.height/2;
+    const offsetX=centerX-baseLeft-pos.x*zoom;
+    const offsetY=centerY-baseTop-pos.y*zoom;
+    canvas.style.transformOrigin='0 0';
+    canvas.style.transform='translate('+offsetX+'px,'+offsetY+'px) scale('+zoom+')';
+    cursorX=centerX;cursorY=centerY;
+  } else {
+    canvas.style.transform='none';
+  }
+  cursorEl.style.left=cursorX+'px';
+  cursorEl.style.top=cursorY+'px';
+  cursorEl.style.display=trackpad?'block':'none';
+  if(send && rfb) rfb._handleMouseMove(pos.x,pos.y);
+}
+function setZoom(value){
+  const previous=zoom;
+  zoom=Math.max(1,Math.min(8,value));
+  zoomReset.textContent=zoom.toFixed(zoom===1?0:1)+'×';
+  zoomReset.setAttribute('aria-label','Масштаб '+zoom.toFixed(1)+'×. Нажми для сброса');
+  if(previous!==zoom) updateCursor(false);
+}
+zoomReset.addEventListener('click',()=>{setZoom(1);hint('Масштаб сброшен: весь рабочий стол');});
+function move(dx,dy){
+  if(!rfb || !pos.ready)return;
+  // The camera follows the pointer, with fine control when zoomed.
+  pos.x+=dx*1.4/zoom;
+  pos.y+=dy*1.4/zoom;
+  updateCursor(true);
+}
+function mouseButton(mask,down){
+  if(!rfb || !pos.ready) return;
+  rfb._handleMouseButton(pos.x,pos.y,down,mask);
+}
+function click(mask=1){mouseButton(mask,1);mouseButton(mask,0);}
+function release(){
+  clearTimeout(longTimer);
+  if(drag){mouseButton(1,0);drag=false;}
+}
+function resetTouches(){
+  release();pointers.clear();gestureMax=0;gestureMoved=false;wheelAccumulator=0;pinch=null;
+}
+function connect(){
+  const proto=location.protocol==='https:'?'wss':'ws';
+  const uri=proto+'://'+location.host+'/websockify';
+  statusEl.textContent='Подключение к рабочему столу…';
+  try { rfb=new RFB(screen,uri,{shared:true}); }
+  catch(e){statusEl.textContent='Ошибка запуска: '+e.message;setTimeout(connect,5000);return;}
+  rfb.scaleViewport=true;
+  rfb.resizeSession=false;
+  rfb.focusOnClick=true;
+  rfb.addEventListener('connect',()=>{
+    retry=0;statusEl.textContent='';pos.ready=false;pos.w=0;pos.h=0;
+    requestAnimationFrame(()=>updateCursor(true));
+  });
+  rfb.addEventListener('disconnect',()=>{
+    resetTouches();statusEl.textContent='Связь потеряна. Переподключение…';
+    retry++;setTimeout(connect,Math.min(1000*retry,6000));
+  });
+  rfb.addEventListener('securityfailure',()=>{statusEl.textContent='Ошибка авторизации VNC';});
+}
+connect();
+window.addEventListener('resize',()=>requestAnimationFrame(()=>requestAnimationFrame(()=>updateCursor(false))));
+window.addEventListener('orientationchange',()=>setTimeout(()=>updateCursor(false),350));
+
+function setMode(value){
+  trackpad=value;resetTouches();
+  if(!value) setZoom(1); // Native direct-touch coordinates must not be CSS-zoomed.
+  layer.style.display=value?'block':'none';
+  cursorEl.style.display=value?'block':'none';
+  modeBtn.textContent=value?'Тачпад':'Прямое';
+  modeBtn.setAttribute('aria-pressed',String(value));
+  hint(value?'Тачпад: двигай пальцем, касание = клик':'Прямое: курсор перемещается в точку касания');
+  updateCursor(false);
+}
+modeBtn.addEventListener('click',()=>setMode(!trackpad));
+document.getElementById('left').addEventListener('click',()=>click(1));
+document.getElementById('right').addEventListener('click',()=>click(4));
+
+layer.addEventListener('pointerdown',e=>{
+  if(!trackpad)return;
+  e.preventDefault();
+  pointers.set(e.pointerId,{x:e.clientX,y:e.clientY,sx:e.clientX,sy:e.clientY,time:Date.now(),moved:false});
+  try{layer.setPointerCapture(e.pointerId);}catch(_){}
+  gestureMax=Math.max(gestureMax,pointers.size);
+  clearTimeout(longTimer);
+  if(pointers.size===1){
+    longTimer=setTimeout(()=>{
+      if(pointers.size===1 && gestureMax===1 && !drag){
+        const p=pointers.get(e.pointerId);
+        if(p && !p.moved){mouseButton(1,1);drag=true;hint('Удерживай палец и двигай — перетаскивание');}
+      }
+    },480);
+  }else if(drag){release();}
+  if(pointers.size===2){
+    const pair=Array.from(pointers.values());
+    const distance=Math.hypot(pair[0].x-pair[1].x,pair[0].y-pair[1].y);
+    const cy=(pair[0].y+pair[1].y)/2;
+    pinch={distance:Math.max(distance,1),initialZoom:zoom,startY:cy,lastY:cy,mode:null};
+    wheelAccumulator=0;
+  }
+},{passive:false});
+layer.addEventListener('pointermove',e=>{
+  const p=pointers.get(e.pointerId);
+  if(!p)return;
+  e.preventDefault();
+  const dx=e.clientX-p.x,dy=e.clientY-p.y;
+  p.x=e.clientX;p.y=e.clientY;
+  if(Math.hypot(p.x-p.sx,p.y-p.sy)>20){p.moved=true;gestureMoved=true;clearTimeout(longTimer);}
+  if(pointers.size===1 && gestureMax===1)move(dx,dy);
+  else if(pointers.size===2 && pinch){
+    const pair=Array.from(pointers.values());
+    const distance=Math.hypot(pair[0].x-pair[1].x,pair[0].y-pair[1].y);
+    const cy=(pair[0].y+pair[1].y)/2;
+    if(!pinch.mode){
+      const spanChange=Math.abs(distance-pinch.distance);
+      // One finger often moves first. Wait for a genuine spread before
+      // choosing pinch instead of two-finger scrolling.
+      if(spanChange>Math.max(22,pinch.distance*0.12)){
+        pinch.mode='zoom';gestureMoved=true;clearTimeout(longTimer);
+      }else if(Math.abs(cy-pinch.startY)>11 && spanChange<22){
+        pinch.mode='scroll';gestureMoved=true;clearTimeout(longTimer);
+      }
+    }
+    if(pinch.mode==='zoom'){
+      setZoom(pinch.initialZoom*distance/pinch.distance);
+    }else if(pinch.mode==='scroll'){
+      wheelAccumulator+=(cy-pinch.lastY)/2;
+      if(Math.abs(wheelAccumulator)>=16){
+        const mask=wheelAccumulator>0?8:16;
+        const steps=Math.min(8,Math.floor(Math.abs(wheelAccumulator)/16));
+        for(let i=0;i<steps;i++)click(mask);
+        wheelAccumulator-=Math.sign(wheelAccumulator)*steps*16;
+      }
+    }
+    pinch.lastY=cy;
+  }
+},{passive:false});
+function endPointer(e,cancel=false){
+  const p=pointers.get(e.pointerId);
+  if(!p)return;
+  e.preventDefault();
+  pointers.delete(e.pointerId);
+  clearTimeout(longTimer);
+  if(drag){release();}
+  else if(!cancel && gestureMax===1 && !p.moved && Date.now()-p.time<800){click(1);}
+  else if(!cancel && gestureMax===2 && pointers.size===0 && !gestureMoved){click(4);}
+  if(pointers.size<2) pinch=null;
+  if(pointers.size===0){gestureMax=0;gestureMoved=false;wheelAccumulator=0;}
+}
+layer.addEventListener('pointerup',e=>endPointer(e),{passive:false});
+layer.addEventListener('pointercancel',e=>endPointer(e,true),{passive:false});
+layer.addEventListener('contextmenu',e=>e.preventDefault());
+
+function sendText(text){
+  if(!rfb)return;
+  for(const char of text){
+    const cp=char.codePointAt(0);
+    if(cp===10)rfb.sendKey(0xff0d);
+    else if(cp===9)rfb.sendKey(0xff09);
+    else if(cp>=32)rfb.sendKey(cp<=255?cp:0x01000000+cp);
+  }
+}
+ime.addEventListener('input',e=>{
+  if(e.inputType==='deleteContentBackward'){rfb?.sendKey(0xff08);}
+  else if(e.inputType==='deleteContentForward'){rfb?.sendKey(0xffff);}
+  else if(ime.value){sendText(ime.value);}
+  ime.value='';
+});
+ime.addEventListener('keydown',e=>{
+  const keys={Enter:0xff0d,Tab:0xff09,Escape:0xff1b,ArrowLeft:0xff51,ArrowUp:0xff52,ArrowRight:0xff53,ArrowDown:0xff54};
+  if(keys[e.key]){e.preventDefault();rfb?.sendKey(keys[e.key]);}
+});
+document.getElementById('keyboard').addEventListener('click',()=>{
+  imePanel.classList.toggle('open');
+  if(imePanel.classList.contains('open'))ime.focus();
+});
+document.getElementById('ime-close').addEventListener('click',()=>{
+  ime.blur();imePanel.classList.remove('open');
+});
+document.getElementById('tab').addEventListener('click',()=>rfb?.sendKey(0xff09));
+document.getElementById('fullscreen').addEventListener('click',async()=>{
+  try{
+    if(document.fullscreenElement){await document.exitFullscreen();}
+    else if(document.documentElement.requestFullscreen){await document.documentElement.requestFullscreen();}
+    else {hint('На iPhone поверни телефон горизонтально или добавь сайт на экран «Домой»');}
+  }catch(_){hint('Полноэкранный режим недоступен в этом браузере');}
+});
+</script>
+</body></html>
