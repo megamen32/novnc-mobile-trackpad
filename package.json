@@ -1,6 +1,6 @@
 {
   "name": "novnc-mobile-trackpad",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Drop-in mobile touchpad and pinch-to-zoom interface for noVNC",
   "license": "MIT",

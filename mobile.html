@@ -7,15 +7,17 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>noVNC — мобильный рабочий стол</title>
 <style>
-:root { color-scheme: dark; font: 14px system-ui,-apple-system,sans-serif; }
+:root { color-scheme: dark; font: 14px system-ui,-apple-system,sans-serif;
+ --keyboard-inset:0px; --panel-height:0px;
+ --bar-height:calc(58px + env(safe-area-inset-bottom)); }
 * { box-sizing:border-box; }
 html,body { width:100%;height:100%;margin:0;overflow:hidden;background:#0b101a; }
-#screen { position:fixed;inset:0 0 calc(58px + env(safe-area-inset-bottom)) 0;overflow:hidden;background:#090b11; }
+#screen { position:fixed;inset:0 0 calc(var(--bar-height) + var(--keyboard-inset) + var(--panel-height)) 0;overflow:hidden;background:#090b11; }
 #screen > div {overflow:hidden !important;}
-#touch { position:fixed;inset:0 0 calc(58px + env(safe-area-inset-bottom)) 0;z-index:3;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none; }
+#touch { position:fixed;inset:0 0 calc(var(--bar-height) + var(--keyboard-inset) + var(--panel-height)) 0;z-index:3;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none; }
 #cursor { position:fixed;z-index:4;pointer-events:none;display:none;width:19px;height:25px;filter:drop-shadow(0px 1px 2px #000); }
 #cursor svg { width:100%;height:100%; }
-#bar { position:fixed;bottom:0;left:0;right:0;height:calc(58px + env(safe-area-inset-bottom));padding:5px 5px calc(5px + env(safe-area-inset-bottom));z-index:6;display:flex;gap:5px;align-items:stretch;background:#151b28;border-top:1px solid #303949; }
+#bar { position:fixed;bottom:var(--keyboard-inset);left:0;right:0;height:var(--bar-height);padding:5px 5px calc(5px + env(safe-area-inset-bottom));z-index:6;display:flex;gap:5px;align-items:stretch;background:#151b28;border-top:1px solid #303949; }
 #bar button { min-width:0;flex:1;border:1px solid #364456;border-radius:9px;background:#273245;color:#fff;font:500 12px system-ui,-apple-system,sans-serif;white-space:nowrap; }
 #bar button.primary { flex:1.5;background:#325dc1;border-color:#4975d8; }
 #bar button:active { background:#455b7c; }
@@ -26,14 +28,32 @@ html,body { width:100%;height:100%;margin:0;overflow:hidden;background:#0b101a; 
 #zoom-reset { position:fixed;right:9px;top:calc(8px + env(safe-area-inset-top));z-index:5;
 border:1px solid #566784;background:#25334c;color:white;border-radius:9px;padding:7px 10px;
 font:600 13px system-ui,-apple-system,sans-serif;touch-action:manipulation;min-width:47px; }
-#ime-panel { position:fixed;left:8px;right:8px;bottom:calc(64px + env(safe-area-inset-bottom));z-index:7;padding:8px;background:#1e2a3d;border-radius:10px;display:none;gap:8px;align-items:center; }
-#ime-panel.open {display:flex;}
-#ime {flex:1;width:0;min-width:0;border-radius:6px;border:1px solid #516784;background:#0f1723;color:white;font:16px system-ui,sans-serif;padding:11px; }
-#ime-close { background:#33445f;color:white;border:0;border-radius:6px;padding:12px; }
+#ime-panel,#paste-panel {
+ position:fixed;left:8px;right:8px;
+ bottom:calc(var(--bar-height) + var(--keyboard-inset) + 6px);
+ z-index:7;padding:8px;background:#1e2a3d;border:1px solid #455a7b;
+ border-radius:10px;display:none;flex-direction:column;gap:7px;
+}
+#ime-panel.open,#paste-panel.open {display:flex;}
+#ime,#paste-text {
+ width:100%;min-width:0;min-height:46px;border-radius:6px;border:1px solid #516784;
+ background:#0f1723;color:white;font:16px system-ui,-apple-system,sans-serif;padding:10px;
+}
+#paste-text {min-height:68px;max-height:140px;resize:vertical;}
+.panel-actions {display:flex;flex-wrap:wrap;gap:5px;width:100%;}
+.panel-actions button {
+ flex:1;min-width:55px;border:1px solid #506581;border-radius:7px;
+ background:#304461;color:white;padding:8px 5px;font:500 12px system-ui,sans-serif;
+}
+.panel-actions .primary {background:#3565c9;border-color:#628bea;}
+.panel-actions .close {flex:0 0 38px;}
+#paste-panel label {width:100%;font-size:12px;color:#d9e4fb;}
+#paste-status {min-height:0;font-size:12px;color:#cbd5e5;}
+#paste-status:empty {display:none;}
 @media (orientation:landscape) and (max-height:450px) {
- #bar {height:calc(45px + env(safe-area-inset-bottom));padding:3px 5px calc(3px + env(safe-area-inset-bottom));}
- #screen,#touch { bottom:calc(45px + env(safe-area-inset-bottom)); }
- #ime-panel {bottom:calc(49px + env(safe-area-inset-bottom));}
+ :root {--bar-height:calc(45px + env(safe-area-inset-bottom));}
+ #bar {padding:3px 5px calc(3px + env(safe-area-inset-bottom));}
+ #paste-text {min-height:43px;max-height:80px;}
 }
 </style>
 </head>
@@ -44,13 +64,34 @@ font:600 13px system-ui,-apple-system,sans-serif;touch-action:manipulation;min-w
 <div id="status">Подключение к рабочему столу…</div>
 <div id="hint">Два пальца врозь/вместе — масштаб · курсор остаётся в центре · два пальца вместе — прокрутка</div>
 <button id="zoom-reset" type="button" title="Сброс масштаба">1×</button>
-<div id="ime-panel"><input id="ime" type="text" placeholder="Ввод в удалённый Chrome" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"><button id="ime-close" type="button">Готово</button></div>
+<div id="ime-panel">
+ <div class="panel-actions">
+  <button id="key-tab" type="button">Tab</button>
+  <button id="key-enter" type="button">Enter</button>
+  <button id="key-backspace" type="button">⌫</button>
+  <button id="key-escape" type="button">Esc</button>
+  <button id="key-selectall" type="button">Ctrl+A</button>
+  <button id="ime-close" class="close" type="button">✕</button>
+ </div>
+ <input id="ime" type="text" placeholder="Ввод с телефона в удалённую программу" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Ввод текста в удалённую программу">
+</div>
+<div id="paste-panel">
+ <label for="paste-text">Текст для вставки</label>
+ <textarea id="paste-text" placeholder="Удерживай поле → «Вставить», либо нажми «Из буфера»" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+ <div class="panel-actions">
+  <button id="paste-read" class="primary" type="button">Из буфера</button>
+  <button id="paste-send" type="button">Вставить</button>
+  <button id="paste-type" type="button">Через VNC</button>
+  <button id="paste-close" class="close" type="button">✕</button>
+ </div>
+ <div id="paste-status" role="status" aria-live="polite"></div>
+</div>
 <div id="bar">
 <button id="mode" class="primary" type="button" aria-pressed="true">Тачпад</button>
 <button id="left" type="button">ЛКМ</button>
 <button id="right" type="button">ПКМ</button>
 <button id="keyboard" type="button">⌨ Ввод</button>
-<button id="tab" type="button">Tab</button>
+<button id="paste" type="button">Буфер</button>
 <button id="fullscreen" type="button">⛶</button>
 </div>
 <script type="module">
@@ -65,6 +106,10 @@ const modeBtn=document.getElementById('mode');
 const zoomReset=document.getElementById('zoom-reset');
 const ime=document.getElementById('ime');
 const imePanel=document.getElementById('ime-panel');
+const pastePanel=document.getElementById('paste-panel');
+const pasteText=document.getElementById('paste-text');
+const pasteStatus=document.getElementById('paste-status');
+let composing=false,compositionJustEnded=false;
 let rfb=null, retry=0, trackpad=true, drag=false, longTimer=null, gestureMax=0, gestureMoved=false, wheelAccumulator=0, zoom=1, pinch=null;
 const pointers=new Map();
 const pos={x:0,y:0,ready:false,w:0,h:0};
@@ -165,8 +210,48 @@ function connect(){
   rfb.addEventListener('securityfailure',()=>{statusEl.textContent='Ошибка авторизации VNC';});
 }
 connect();
-window.addEventListener('resize',()=>requestAnimationFrame(()=>requestAnimationFrame(()=>updateCursor(false))));
-window.addEventListener('orientationchange',()=>setTimeout(()=>updateCursor(false),350));
+// Keep both the screen and the toolbar above the virtual keyboard.
+function syncViewport(){
+ const vv=window.visualViewport;
+ const occupied=vv?Math.max(0,innerHeight-vv.height-vv.offsetTop):0;
+ document.documentElement.style.setProperty('--keyboard-inset',Math.round(occupied)+'px');
+ const panel=imePanel.classList.contains('open')?imePanel:
+   pastePanel.classList.contains('open')?pastePanel:null;
+ document.documentElement.style.setProperty('--panel-height',
+   panel?Math.ceil(panel.getBoundingClientRect().height+6)+'px':'0px');
+ requestAnimationFrame(()=>{
+   if(rfb?._rfb_connection_state==='connected') rfb._updateScale();
+   updateCursor(false);
+ });
+}
+function setPanel(which){
+ imePanel.classList.toggle('open',which==='ime');
+ pastePanel.classList.toggle('open',which==='paste');
+ if(which!=='ime')ime.blur();
+ if(which!=='paste')pasteText.blur();
+ syncViewport();
+ if(which==='ime')ime.focus();
+}
+window.addEventListener('resize',syncViewport);
+window.addEventListener('orientationchange',()=>setTimeout(syncViewport,350));
+window.visualViewport?.addEventListener('resize',syncViewport);
+window.visualViewport?.addEventListener('scroll',syncViewport);
+document.addEventListener('visibilitychange',()=>{if(document.hidden)resetTouches();});
+window.addEventListener('pagehide',resetTouches);
+window.addEventListener('blur',resetTouches);
+function syncNativeTouch(e){
+ // noVNC delivers direct touches itself; remember the latest coordinates for toolbar clicks.
+ if(trackpad)return;
+ const canvas=getCanvas(), touch=e.changedTouches?.[0];
+ if(!canvas||!touch)return;
+ const r=canvas.getBoundingClientRect();
+ pos.x=Math.max(0,Math.min(r.width-1,touch.clientX-r.left));
+ pos.y=Math.max(0,Math.min(r.height-1,touch.clientY-r.top));
+ pos.w=canvas.offsetWidth;pos.h=canvas.offsetHeight;pos.ready=true;
+}
+for(const name of ['touchstart','touchmove','touchend']){
+ screen.addEventListener(name,syncNativeTouch,{capture:true,passive:true});
+}
 
 function setMode(value){
   trackpad=value;resetTouches();
@@ -257,33 +342,119 @@ layer.addEventListener('pointerup',e=>endPointer(e),{passive:false});
 layer.addEventListener('pointercancel',e=>endPointer(e,true),{passive:false});
 layer.addEventListener('contextmenu',e=>e.preventDefault());
 
+function isConnected(){return rfb?._rfb_connection_state==='connected';}
 function sendText(text){
-  if(!rfb)return;
-  for(const char of text){
-    const cp=char.codePointAt(0);
-    if(cp===10)rfb.sendKey(0xff0d);
-    else if(cp===9)rfb.sendKey(0xff09);
-    else if(cp>=32)rfb.sendKey(cp<=255?cp:0x01000000+cp);
-  }
+ if(!isConnected())return false;
+ for(const char of text){
+   const cp=char.codePointAt(0);
+   if(cp===10 || cp===13)rfb.sendKey(0xff0d);
+   else if(cp===9)rfb.sendKey(0xff09);
+   else if(cp>=32)rfb.sendKey(cp<=255?cp:0x01000000+cp);
+ }
+ return true;
 }
+function ctrlChord(keysym,keycode){
+ if(!isConnected())return;
+ rfb.sendKey(0xffe3,'ControlLeft',true);
+ try{rfb.sendKey(keysym,keycode);}
+ finally{rfb.sendKey(0xffe3,'ControlLeft',false);}
+}
+function pasteFeedback(message){pasteStatus.textContent=message;}
+// Reliable default: inject characters as VNC key events. The legacy clipboard
+// is an opt-in fallback, since many x11vnc servers do not update X11 CLIPBOARD.
+// Unicode is sent with X11 Unicode keysyms (host application support varies).
+async function sendRemoteText(text,useLegacyClipboard=false){
+ text=text.replace(/\r\n?/g,'\n');
+ if(!text){pasteFeedback('Буфер пуст.');return false;}
+ if(!isConnected()){pasteFeedback('Нет соединения с рабочим столом.');return false;}
+ if(text.length>12000){pasteFeedback('Максимум 12 000 символов за раз.');return false;}
+ const unicode=Array.from(text).some(ch=>ch.codePointAt(0)>255);
+ if(!useLegacyClipboard||unicode){
+   let count=0;
+   for(const ch of text){
+     if(!isConnected()){pasteFeedback('Соединение прервалось.');return false;}
+     sendText(ch);
+     if(++count%30===0)await new Promise(resolve=>setTimeout(resolve,12));
+   }
+   pasteFeedback(unicode?'Текст передан Unicode-клавишами VNC.':'Текст введён в удалённое приложение.');
+ }else{
+   rfb.clipboardPasteFrom(text);
+   await new Promise(resolve=>setTimeout(resolve,200));
+   if(!isConnected())return false;
+   ctrlChord(0x0076,'KeyV');
+   pasteFeedback('Вставка отправлена через VNC-буфер.');
+ }
+ return true;
+}
+async function sendFromField(useLegacyClipboard=false){
+ const value=pasteText.value;
+ const ok=await sendRemoteText(value,useLegacyClipboard);
+ if(ok)pasteText.value='';
+ return ok;
+}
+// Reading the system clipboard requires an explicit user click and browser permission.
+document.getElementById('paste-read').addEventListener('click',async()=>{
+ if(!navigator.clipboard?.readText){
+   pasteFeedback('Нет доступа к буферу. Нажми в поле и выбери «Вставить».');
+   pasteText.focus();
+   return;
+ }
+ let value;
+ try{value=await navigator.clipboard.readText();}
+ catch(_){
+   pasteFeedback('Доступ к буферу запрещён. Нажми в поле → Вставить → кнопку «Вставить».');
+   pasteText.focus();return;
+ }
+ if(!value){pasteFeedback('Буфер телефона пуст.');return;}
+ await sendRemoteText(value);
+});
+document.getElementById('paste-send').addEventListener('click',()=>{void sendFromField(false);});
+document.getElementById('paste-type').addEventListener('click',()=>{void sendFromField(true);});
+document.getElementById('paste').addEventListener('click',()=>{
+ const next=pastePanel.classList.contains('open')?null:'paste';
+ setPanel(next);
+ if(next)pasteFeedback('');
+});
+document.getElementById('paste-close').addEventListener('click',()=>setPanel(null));
+
+ime.addEventListener('compositionstart',()=>{composing=true;});
+ime.addEventListener('compositionend',e=>{
+ composing=false;compositionJustEnded=true;
+ const value=ime.value||e.data||'';
+ ime.value='';
+ if(value)sendText(value);
+ setTimeout(()=>{compositionJustEnded=false;},75);
+});
+ime.addEventListener('paste',e=>{
+ const value=e.clipboardData?.getData('text/plain');
+ if(value){e.preventDefault();ime.value='';void sendRemoteText(value);}
+});
 ime.addEventListener('input',e=>{
-  if(e.inputType==='deleteContentBackward'){rfb?.sendKey(0xff08);}
-  else if(e.inputType==='deleteContentForward'){rfb?.sendKey(0xffff);}
-  else if(ime.value){sendText(ime.value);}
-  ime.value='';
+ if(composing||e.isComposing)return;
+ if(compositionJustEnded){compositionJustEnded=false;ime.value='';return;}
+ if(e.inputType?.startsWith('delete')){
+   rfb?.sendKey(e.inputType==='deleteContentForward'?0xffff:0xff08);
+   ime.value='';return;
+ }
+ const value=ime.value;
+ ime.value='';
+ if(value){
+   if(e.inputType==='insertFromPaste')void sendRemoteText(value);
+   else sendText(value);
+ }
 });
 ime.addEventListener('keydown',e=>{
-  const keys={Enter:0xff0d,Tab:0xff09,Escape:0xff1b,ArrowLeft:0xff51,ArrowUp:0xff52,ArrowRight:0xff53,ArrowDown:0xff54};
-  if(keys[e.key]){e.preventDefault();rfb?.sendKey(keys[e.key]);}
+ const keys={Enter:0xff0d,Tab:0xff09,Escape:0xff1b,ArrowLeft:0xff51,ArrowUp:0xff52,ArrowRight:0xff53,ArrowDown:0xff54};
+ if(keys[e.key]){e.preventDefault();rfb?.sendKey(keys[e.key]);}
 });
 document.getElementById('keyboard').addEventListener('click',()=>{
-  imePanel.classList.toggle('open');
-  if(imePanel.classList.contains('open'))ime.focus();
+ setPanel(imePanel.classList.contains('open')?null:'ime');
 });
-document.getElementById('ime-close').addEventListener('click',()=>{
-  ime.blur();imePanel.classList.remove('open');
-});
-document.getElementById('tab').addEventListener('click',()=>rfb?.sendKey(0xff09));
+document.getElementById('ime-close').addEventListener('click',()=>setPanel(null));
+for(const [id,key] of [['key-tab',0xff09],['key-enter',0xff0d],['key-backspace',0xff08],['key-escape',0xff1b]]){
+ document.getElementById(id).addEventListener('click',()=>rfb?.sendKey(key));
+}
+document.getElementById('key-selectall').addEventListener('click',()=>ctrlChord(0x0061,'KeyA'));
 document.getElementById('fullscreen').addEventListener('click',async()=>{
   try{
     if(document.fullscreenElement){await document.exitFullscreen();}

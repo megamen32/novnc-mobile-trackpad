@@ -11,10 +11,13 @@ Built on top of noVNC's existing VNC renderer and WebSocket connection. **This i
 - **Cursor-following camera**: when zoomed, the pointer stays at the viewport center while the remote desktop moves beneath it.
 - **Tap / long press**: tap to click; hold to start a drag, move, then release.
 - **Scrolling**: move two fingers together to scroll; pinch to zoom.
-- **Buttons**: explicit left and right clicks, Tab, mobile keyboard, and fullscreen (where supported).
+- **Buttons**: explicit left/right clicks, mobile text input, Tab, Enter, Backspace, Esc, Ctrl+A and fullscreen.
 - **Fit to viewport**: the complete remote desktop is initially scaled to fit the phone. Remote screen resolution is unchanged.
-- **Direct-touch mode**: switch from touchpad mode to standard noVNC touch input. Zoom is reset when switching to direct touch.
-- No frameworks, bundlers, cookies, credentials, telemetry, or external JavaScript.
+- **Direct-touch mode**: switch to native noVNC touch input. Zoom resets, and toolbar clicks follow the last touch coordinates.
+- **Paste from phone**: explicit permission-gated clipboard read or manual paste field; Unicode text is entered as VNC keyboard events by default.
+- **IME-aware input**: composed characters are committed only after the composition finishes.
+- **Mobile keyboard layout**: controls and cursor-following viewport stay above the phone keyboard.
+- No frameworks, bundlers, telemetry, credentials, or remote third-party assets beyond noVNC.
 
 ## Install
 
@@ -59,7 +62,17 @@ Put your existing authenticated HTTPS reverse proxy in front of port 6082 and ma
 | **ПКМ** button | Right click |
 | **Тачпад** button | Switch between touchpad and direct-touch |
 | **1×–8×** indicator | Tap to reset zoom |
-| **⌨ Ввод** | Mobile text input |
+| **⌨ Ввод** | Mobile keyboard and special keys |
+| **Буфер** | Insert from the phone clipboard or via manual paste |
+
+## Mobile paste
+
+1. Focus the intended text field **inside the remote desktop**.
+2. Tap **Буфер → Из буфера**. Your browser may ask permission to read the phone's clipboard.
+3. If the browser blocks clipboard access, long-press the local text field, select **Paste**, and tap **Вставить**.
+4. **Через VNC** is an optional legacy clipboard + Ctrl+V method. It is **not** the default because older x11vnc versions may fail to synchronize X11 clipboard selections.
+
+The default paste method types the text through VNC keyboard events, including Unicode keysyms. It works without additional server endpoints, though some remote applications may not accept all Unicode characters. **⌨ Ввод** provides regular typing and special keys (Tab, Enter, Backspace, Esc, Ctrl+A). The page reads your phone clipboard only after a button press, does not store the pasted text, and clears the manual input after transmission. Only paste into remote systems you trust.
 
 Interface labels are currently in Russian. The controls work in ordinary mobile browsers.
 
@@ -68,7 +81,9 @@ Interface labels are currently in Russian. The controls work in ordinary mobile 
 - Originally developed and tested on Ubuntu noVNC package **1:1.0.0-5** with Chrome and touch emulation. Functionality was also tested against a real X11 desktop using noVNC → websockify → x11vnc.
 - This lightweight extension calls some **private noVNC JavaScript methods** (`_handleMouseMove`, `_handleMouseButton` and `_screen`). Compatibility with future noVNC versions is **not guaranteed**; verify after upgrading.
 - When zoomed, panning follows the **touchpad cursor**, not the screen center of the pinch gesture.
-- Text entry on mobile virtual keyboards can vary by platform and input method.
+- Text entry on mobile virtual keyboards can vary by platform and input method; not every remote app supports every Unicode keysym.
+- iOS Safari can block direct clipboard reads; use the manual field instead.
+- Legacy native VNC clipboard synchronization may fail with x11vnc; use the default keyboard-event paste.
 - Browser fullscreen is restricted on some iPhone/Safari versions; landscape mode is usually better.
 
 ## Checks

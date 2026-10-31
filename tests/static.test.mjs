@@ -57,3 +57,40 @@ test('contains no private deployment hostnames or specific server identities', (
     '95.165.165.65', '192.168.', 'chatgpt-chrome-profile'
   ]) assert.ok(!html.toLowerCase().includes(term), 'Unexpected identity: ' + term);
 });
+
+test('explicit clipboard access and manual fallback are available', () => {
+  assert.match(html, /id="paste-read"/);
+  assert.match(html, /id="paste-text"/);
+  assert.match(html, /id="paste-send"/);
+  assert.match(html, /navigator\.clipboard\?\.readText/);
+  assert.match(html, /pasteText\.focus\(\)/);
+  assert.match(html, /if\(ok\)pasteText\.value=''/);
+});
+
+test('Unicode paste defaults to remote keyboard events', () => {
+  assert.match(html, /async function sendRemoteText\(text,useLegacyClipboard=false\)/);
+  assert.match(html, /if\(!useLegacyClipboard\|\|unicode\)/);
+  assert.match(html, /rfb\.sendKey\(cp<=255\?cp:0x01000000\+cp\)/);
+  assert.match(html, /text\.replace\(\/\\r\\n\?\/g,'\\n'\)/);
+});
+
+test('IME composition is preserved until completion', () => {
+  assert.match(html, /addEventListener\('compositionstart'/);
+  assert.match(html, /addEventListener\('compositionend'/);
+  assert.match(html, /if\(composing\|\|e\.isComposing\)return/);
+});
+
+test('direct touch updates coordinates for toolbar buttons', () => {
+  assert.match(html, /function syncNativeTouch\(e\)/);
+  assert.match(html, /touch\.clientX-r\.left/);
+  assert.match(html, /touch\.clientY-r\.top/);
+  assert.match(html, /\['touchstart','touchmove','touchend'\]/);
+});
+
+test('virtual keyboard and backgrounding keep remote input safe', () => {
+  assert.match(html, /visualViewport\?\.addEventListener\('resize',syncViewport\)/);
+  assert.match(html, /--keyboard-inset/);
+  assert.match(html, /--panel-height/);
+  assert.match(html, /window\.addEventListener\('blur',resetTouches\)/);
+  assert.match(html, /window\.addEventListener\('pagehide',resetTouches\)/);
+});
